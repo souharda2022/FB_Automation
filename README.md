@@ -1,7 +1,7 @@
 
 Facebook Comment Scraper Chrome Extension
 
-How to install:
+How to install it:
 
 1. Open Chrome
 2. Go to chrome://extensions/
