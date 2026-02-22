@@ -213,8 +213,24 @@ function sentiment(text) {
 }
 
 // Facebook UI strings that should never be treated as comment text
-const _UI_RE = /^(like|reply|see translation|write a (comment|reply)|most relevant|all comments|newest first|\d+[smhdwy]|\d+\s+(like|love|reaction|comment|share)s?)$/i;
-function isUIText(t) { return !t || t.length < 2 || _UI_RE.test(t.trim()); }
+const _UI_RE = /^(like|reply|see translation|write a (comment|reply)|most relevant|all comments|newest first|\d+[smhdwy]|\d+\s+(like|love|reaction|comment|share)s?|follow|share|view profile|view more|hide repl(y|ies)|load more|top comments)$/i;
+function isUIText(t) {
+    if (!t || t.length < 2) return true;
+    const s = t.trim();
+    if (_UI_RE.test(s)) return true;
+    // Dot/bullet prefix + UI action:  "· Follow", "· Share"
+    if (/^[·•]\s*(follow|share|like|reply|comment|view|see)$/i.test(s)) return true;
+    // Date stamps: "12 Feb", "12 Feb ·", "Jan 12 ·", "12 February"
+    if (/^\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*[·•]?\s*$/i.test(s)) return true;
+    if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\s*[·•]?\s*$/i.test(s)) return true;
+    // Internal Facebook hash/token IDs — no spaces, mixed alphanumeric, 12+ chars, 3+ digits
+    if (s.length >= 12 && !s.includes(' ') && /^[a-zA-Z0-9_\-]+$/.test(s) && (s.match(/\d/g) || []).length >= 3) return true;
+    // Bare domain names: "RggYKHG.com", "example.com"
+    if (/^[a-zA-Z0-9][a-zA-Z0-9\-]*\.[a-zA-Z]{2,}$/.test(s) && !s.includes(' ')) return true;
+    // Full URLs
+    if (/^https?:\/\//i.test(s)) return true;
+    return false;
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // CSV + DOWNLOAD
@@ -402,25 +418,48 @@ function byXPath(xpath) {
 // DOM FINDERS
 // ═════════════════════════════════════════════════════════════════════════════
 function findMostRelevant() {
-    return Array.from(document.querySelectorAll('span.xdmh292'))
-        .find(el => (el.innerText || el.textContent || '').trim().startsWith('Most relevant'));
+    const root = getCommentRoot();
+    // Primary: any [role="button"] whose text starts with "Most relevant"
+    for (const el of root.querySelectorAll('[role="button"]')) {
+        const t = (el.innerText || el.textContent || '').trim();
+        if (t === 'Most relevant' || (t.startsWith('Most relevant') && t.length < 40)) return el;
+    }
+    // Secondary: any span with that exact text — return the nearest button ancestor
+    for (const el of root.querySelectorAll('span')) {
+        const t = (el.innerText || el.textContent || '').trim();
+        if (t === 'Most relevant') return el.closest('[role="button"]') || el;
+    }
+    // XPath fallback (user-supplied)
+    return byXPath(MOST_RELEVANT_XPATH);
 }
 
 function findAllComments() {
-    return document.querySelector('span.xk50ysn') ||
-        Array.from(document.querySelectorAll('span.xdmh292'))
-            .find(el => (el.innerText || el.textContent || '').trim() === 'All comments');
+    // Look inside dropdown/menu containers first (most specific)
+    for (const sel of ['[role="menuitem"]', '[role="option"]', '[role="menu"] [role="button"]', '[role="listbox"] [role="option"]']) {
+        for (const el of document.querySelectorAll(sel)) {
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t === 'All comments' || t.startsWith('All comments')) return el;
+        }
+    }
+    // Broad span search — return nearest clickable ancestor if found
+    for (const el of document.querySelectorAll('span')) {
+        const t = (el.innerText || el.textContent || '').trim();
+        if (t === 'All comments') return el.closest('[role="menuitem"],[role="option"],[role="button"]') || el;
+    }
+    // XPath fallback
+    return byXPath(ALL_COMMENTS_XPATH);
 }
 
 function findCommentBtns() {
-    let els = Array.from(document.querySelectorAll('span.xdj266r.x14z9mp'))
-        .filter(el => /\d+\s+comments?/i.test(el.textContent || ''));
-    if (els.length) return els;
-    els = Array.from(document.querySelectorAll('span.xdj266r'))
-        .filter(el => /\d+\s+comments?/i.test(el.textContent || ''));
-    if (els.length) return els;
-    return Array.from(document.querySelectorAll('span,a'))
+    // Text-content based (class-agnostic) — primary strategy
+    let els = Array.from(document.querySelectorAll('span,a'))
         .filter(el => /^\d+\s+comments?$/i.test((el.innerText || '').trim()));
+    if (els.length) return els;
+    // Broader match (e.g. "123 Comments · 45 Shares")
+    els = Array.from(document.querySelectorAll('span,a'))
+        .filter(el => /\d+\s+comments?/i.test((el.innerText || el.textContent || '').trim()) &&
+                      (el.innerText || el.textContent || '').trim().length < 40);
+    return els;
 }
 
 // ── "View more" buttons — broad scan of role="button" elements ────────────
@@ -534,6 +573,19 @@ function findCommentScrollArea() {
     return null;
 }
 
+// True when the comment section is visibly open — works even when the
+// "Most relevant" sort button uses a class name we haven't seen yet.
+function commentsAreOpen() {
+    if (findMostRelevant()) return true;
+    const root = getCommentRoot();
+    // ≥2 articles means at least the post + one real comment
+    if (root.querySelectorAll('[role="article"]').length >= 2) return true;
+    // A dialog containing articles is the comment modal
+    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"]');
+    if (dialog && dialog.querySelector('[role="article"]')) return true;
+    return false;
+}
+
 function isPostPage() {
     return /\/(posts|permalink|photo|video|videos|groups\/[^/]+\/posts|reel)\//i.test(location.href) ||
            /[?&](story_fbid|fbid|id)=\d/i.test(location.href);
@@ -549,7 +601,7 @@ function getCommentRoot() {
 // PHASE 1: OPEN COMMENT SECTION
 // ═════════════════════════════════════════════════════════════════════════════
 async function openCommentSection() {
-    if (findMostRelevant()) return true;
+    if (commentsAreOpen()) return true;
 
     const btns = findCommentBtns();
     if (!btns.length) {
@@ -566,15 +618,15 @@ async function openCommentSection() {
         if (_stopped) return false;
         fireClick(cur);
         await sleep(200);
-        if (findMostRelevant() || location.href !== prevURL) break;
+        if (commentsAreOpen() || location.href !== prevURL) break;
     }
 
-    const ok = await waitFor(() => findMostRelevant() || (location.href !== prevURL && 'nav'), 8000);
+    const ok = await waitFor(() => commentsAreOpen() || (location.href !== prevURL && 'nav'), 8000);
     if (ok === 'nav') {
         showStatus('Step 1/5: Loading post page...');
         await sleep(3000);
     }
-    return !!findMostRelevant();
+    return commentsAreOpen();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -890,13 +942,13 @@ async function scrapeAllPosts() {
                 if (_stopped) break;
                 fireClick(cur);
                 await sleep(200);
-                if (findMostRelevant() || location.href !== prevURL) break;
+                if (commentsAreOpen() || location.href !== prevURL) break;
             }
 
-            const ok = await waitFor(() => findMostRelevant() || (location.href !== prevURL && 'nav'), 6000);
+            const ok = await waitFor(() => commentsAreOpen() || (location.href !== prevURL && 'nav'), 6000);
             if (ok === 'nav') await sleep(3000);
 
-            if (findMostRelevant()) {
+            if (commentsAreOpen()) {
                 await sortToAllComments();
                 if (!_stopped) {
                     const postData = await scrollAndCollect(seen, 'Post ' + (processed + 1));
