@@ -1,20 +1,45 @@
+document.addEventListener('DOMContentLoaded', () => {
 
-document.getElementById("scrapeBtn").addEventListener("click", async () => {
-    // Hardcoded XPath from user for the comment span
-    const xpath = "/html/body/div[1]/div/div[1]/div/div[4]/div/div/div[1]/div/div[2]/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div/div[2]/div[1]/div/div/span";
-    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-    // Request the content script to click the provided XPath, then scrape after a short delay
-    chrome.tabs.sendMessage(tab.id, { action: "clickComment", xpath }, (response) => {
-        // inform user if click succeeded or failed
-        try {
-            if (!response || !response.clicked) {
-                alert('Could not open comment section automatically. The XPath may be incorrect or the element is not clickable.');
-            }
-        } catch (e) {}
+    const toggle = document.getElementById('translateToggle');
 
-        // wait longer to allow comment section to fully load before scraping
-        setTimeout(() => {
-            chrome.tabs.sendMessage(tab.id, { action: "scrapeComments" });
-        }, 4000);
+    // ── Restore saved preference ──────────────────────────────────────────
+    chrome.storage.local.get('translateEnabled', ({ translateEnabled }) => {
+        // Default ON if never saved
+        toggle.checked = (translateEnabled !== false);
     });
+
+    // ── Persist preference on change ──────────────────────────────────────
+    toggle.addEventListener('change', () => {
+        chrome.storage.local.set({ translateEnabled: toggle.checked });
+    });
+
+    // ── Send message to content script (inject if needed) ─────────────────
+    function send(action) {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (!tabs || !tabs[0]) {
+                alert('No active tab found. Make sure you are on a Facebook page.');
+                return;
+            }
+            const msg = { action, translate: toggle.checked };
+
+            chrome.tabs.sendMessage(tabs[0].id, msg, (_resp) => {
+                if (chrome.runtime.lastError) {
+                    // Content script not yet injected — inject then retry
+                    chrome.scripting.executeScript(
+                        { target: { tabId: tabs[0].id }, files: ['content.js'] },
+                        () => chrome.tabs.sendMessage(tabs[0].id, msg)
+                    );
+                }
+            });
+        });
+    }
+
+    document.getElementById('scrapeBtn').addEventListener('click', () => {
+        send('openAndScrape');
+    });
+
+    document.getElementById('scrapeAllBtn').addEventListener('click', () => {
+        send('scrapeAllPosts');
+    });
+
 });

@@ -2,15 +2,166 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Facebook Comment Scraper</title>
+  <meta charset="utf-8">
+  <title>FB Comment Scraper</title>
   <style>
-    body { font-family: Arial; padding: 10px; width: 200px; }
-    button { width: 100%; padding: 10px; margin-top: 10px; cursor: pointer; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      width: 300px;
+      background: #f0f2f5;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #1877f2;
+      color: #fff;
+      padding: 13px 15px 11px;
+    }
+    .header h1 { font-size: 15px; font-weight: 800; }
+    .header p  { font-size: 11px; opacity: .8; margin-top: 2px; }
+
+    /* ── Body ── */
+    .body { padding: 10px; }
+
+    /* ── Cards ── */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 13px;
+      margin-bottom: 9px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.10);
+    }
+    .card .desc {
+      font-size: 11px;
+      color: #888;
+      margin-top: 7px;
+      line-height: 1.55;
+    }
+
+    /* ── Buttons ── */
+    button.main {
+      width: 100%; padding: 11px 0; border: none; border-radius: 7px;
+      font-size: 13px; font-weight: bold; cursor: pointer; color: #fff;
+      transition: background .15s;
+    }
+    button.main:disabled {
+      opacity: .5; cursor: not-allowed;
+    }
+    .btn-blue  { background: #1877f2; }
+    .btn-green { background: #42b72a; }
+    .btn-blue:hover:not(:disabled)  { background: #166fe5; }
+    .btn-green:hover:not(:disabled) { background: #36a420; }
+
+    /* ── Translate toggle card ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+    .toggle-row .label-text {
+      font-size: 13px;
+      font-weight: bold;
+      color: #333;
+      flex: 1;
+    }
+    .toggle-row .badge {
+      font-size: 10px;
+      background: #e8f0fe;
+      color: #1877f2;
+      border-radius: 4px;
+      padding: 2px 6px;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+    /* iOS-style switch */
+    .switch {
+      position: relative;
+      width: 38px;
+      height: 22px;
+      flex-shrink: 0;
+      margin-left: 10px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #ccc; border-radius: 22px;
+      transition: background .2s;
+      cursor: pointer;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .2s;
+    }
+    input:checked + .slider { background: #7b2d8b; }
+    input:checked + .slider::before { transform: translateX(16px); }
+
+    /* ── Footer note ── */
+    .foot {
+      font-size: 10px; color: #bbb; text-align: center;
+      padding: 4px 10px 12px; line-height: 1.6;
+    }
   </style>
 </head>
 <body>
-  <h3>Open Comments & Scrape</h3>
-  <button id="scrapeBtn" style="padding:12px; width:100%;">Open Comments & Download CSV</button>
+
+  <div class="header">
+    <h1>FB Comment Scraper</h1>
+    <p>Sentiment Analysis · Bangla→English · Pie Chart</p>
+  </div>
+
+  <div class="body">
+
+    <!-- Translate toggle -->
+    <div class="card">
+      <label class="toggle-row">
+        <span class="label-text">Translate Bangla → English</span>
+        <span class="badge">Free API</span>
+        <span class="switch">
+          <input type="checkbox" id="translateToggle" checked>
+          <span class="slider"></span>
+        </span>
+      </label>
+      <p class="desc">
+        Bangla comments are auto-translated via Google Translate before
+        sentiment scoring — giving <b>much more accurate</b> results.
+        Sentiment is re-scored on the English translation.
+      </p>
+    </div>
+
+    <!-- Blue: single post -->
+    <div class="card">
+      <button id="scrapeBtn" class="main btn-blue">Scrape This Post</button>
+      <p class="desc">
+        Opens comments on the visible post, sorts to
+        <b>All comments</b>, expands everything, translates Bangla,
+        then shows a <b>sentiment pie chart</b> + downloads CSV.
+      </p>
+    </div>
+
+    <!-- Green: whole feed -->
+    <div class="card">
+      <button id="scrapeAllBtn" class="main btn-green">Scrape All Posts on Page</button>
+      <p class="desc">
+        Scrolls the Facebook feed, finds every post (up to 20),
+        opens + scrapes all comments, translates, then shows a combined
+        <b>pie chart</b> + downloads CSV.
+      </p>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    ⏸ Pause &nbsp;·&nbsp; ⏹ Stop buttons appear on the page<br>
+    while scraping is running. &nbsp;|&nbsp; Capacity: up to 10 000 comments
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,25 +1,29 @@
 {
   "manifest_version": 3,
   "name": "Facebook Comment Scraper",
-  "version": "1.0",
-  "description": "Scrape Facebook comments and export to CSV",
+  "version": "2.0",
+  "description": "Scrape Facebook comments with sentiment analysis",
   "permissions": [
     "activeTab",
     "scripting",
-    "downloads"
+    "downloads",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://translate.googleapis.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Facebook Comment Scraper"
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.facebook.com/*"
-      ],
-      "js": [
-        "content.js"
-      ]
+      "matches": ["https://www.facebook.com/*"],
+      "js": ["content.js"]
     }
   ]
 }
