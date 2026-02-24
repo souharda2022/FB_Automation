@@ -14,6 +14,7 @@ let _stopped          = false;
 let _badge            = null;
 let _pauseBtn         = null;
 let _translateEnabled = true;
+let _scrollArea       = null;   // cached scroll container — reset each scrape run
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SLEEP  (pause-aware + stop-aware)
@@ -86,24 +87,271 @@ function hideStatus() {
 // SENTIMENT LEXICON  (English + Bangla + Romanised)
 // ═════════════════════════════════════════════════════════════════════════════
 const POSITIVE_WORDS = [
+    // ── English ───────────────────────────────────────────────────────────────
     'good','great','excellent','amazing','wonderful','fantastic','love','like','beautiful',
     'awesome','perfect','best','happy','joy','nice','thank','thanks','brilliant','superb',
     'outstanding','impressive','helpful','kind','lovely','magnificent','marvelous','pleasant',
     'success','win','congratulations','congrats','bravo','support','proud','inspire',
     'appreciate','grateful','blessing','blessed','hope','achieve','strong','brave',
     'smart','wise','talented','skilled','expert','creative','innovative','well done','respect',
+    'cheerful','delightful','enjoy','fabulous','friendly','fun','genuine','glad','glorious',
+    'gracious','heartfelt','honest','joyful','jubilant','legendary','lively','loyal',
+    'mindful','noble','optimistic','passionate','peaceful','positive','powerful','radiant',
+    'refreshing','remarkable','resilient','rewarding','satisfying','sincere','spectacular',
+    'splendid','stellar','stunning','terrific','thankful','thoughtful','thrilling','tremendous',
+    'trustworthy','unique','uplifting','vibrant','victorious','virtuous','wholesome','worthy',
+    'wow','yay','top','superb','flawless','breathtaking','enchanting','energetic','flourish',
+    'gifted','harmless','ideal','inspired','joyous','keen','luminous','motivated','nurture',
+    'peaceful','prosperous','pure','quality','serene','spirited','upbeat','warm',
+    'welcoming','winning','witty','zealous','accomplished','adorable','affectionate','agile',
+    'alert','alive','astute','attractive','balanced','best wishes','bold','calm','capable',
+    'caring','charming','clean','clever','committed','compassionate','competent','confident',
+    'cool','courageous','dedicated','determined','dynamic','elegant','empathetic','empowering',
+    'encouraging','enthusiastic','faithful','fearless','focused','free','fulfilling','generous',
+    'genius','genuine','growth','guidance','halal','healing','heroic','high','honorable',
+    // ── English (extended) ────────────────────────────────────────────────────
+    'haha','hahaha','lol','lmao','rofl','cute','sweet','pretty','gorgeous','handsome',
+    'beautiful mind','so good','very good','so nice','so beautiful','so cute','so sweet',
+    'love it','loved it','love this','loved this','love you','love u','i love',
+    'well said','very true','absolutely','totally agree','i agree','agreed','exactly right',
+    'spot on','so true','true that','facts','period','preach','100%','correct',
+    'keep it up','keep going','go on','carry on','never give up','stay strong','stay blessed',
+    'all the best','good luck','best of luck','prayers','pray for you','god bless',
+    'bless you','more power','you can do it','believe in you','so inspiring',
+    'heart touching','mind blowing','jaw dropping','eye opening','life changing',
+    'so helpful','very helpful','so useful','very useful','informative','educational',
+    'nice work','great work','good work','fine work','excellent work','amazing work',
+    'wonderful work','fantastic work','beautiful work','keep up the good work',
+    'nice one','good one','great one','this is good','this is great','this is amazing',
+    'truly amazing','truly wonderful','truly great','truly inspiring','truly beautiful',
+    'highly recommend','must watch','must read','must see','worth it','worth watching',
+    'legend','iconic','goat','champion','hero','warrior','winner','superstar','star',
+    'fire','lit','dope','slay','slaying','killing it','nailed it','crushed it',
+    'blessed day','happy day','good day','great day','wonderful day','beautiful day',
+    'masha allah','alhamdulillah','subhanallah','jazakallah','inshallah','ameen','amen',
+    'god is good','faith','divine','heavenly','grace','mercy','kindness','peace be upon',
+    'solidarity','unity','together','strength','rise','overcome','prevail',
+    'deserve','worthy of','honor','tribute','salute','kudos','hats off',
+    'impressive work','classy','sophisticated','mature','professional','responsible',
+    'fair','just','righteous','moral','ethical','principled','genuine person',
+    'real one','authentic','original','natural','down to earth','humble','modest',
+    'happy for you','proud of you','so proud','very proud','makes me happy','love seeing this',
+    'this made my day','made me smile','smile','smiling','tears of joy','touched my heart',
+    'moved me','feeling good','good vibes','positive vibes','vibes','energy',
+    // ── Romanised Bangla ─────────────────────────────────────────────────────
     'valo','bhalo','sundor','oshadharon','darun','khub valo','dhonnobad','mashallah',
     'alhamdulillah','masha allah','subhanallah','jajakallah','mojar','shandhar','osthir','fatafati',
+    'onek valo','eto sundor','ki sundor','khub sundor','ki darun','ki osodharon',
+    'bhalo laglo','onek bhalo laglo','boro valo laglo','sotti sundor','ekdom valo',
+    'ekdom sothik','joss','bhalo kaj','maja ache','moja','durun','boro valo',
+    'onek khusi','khusi','notun din','valo theko','allah bless','boro bhai valo',
+    'osadharon kaj','ki sundar','amazing ache','superb ache','bhai darun','apu darun',
+    'khub moja','onek moja','boro sundor','ekta katha valo','salam valo',
+    'shadhu','sotti bhalo','onek onek valo','ami proud','notun asha','asha ache',
+    'valo manush','boro hridoy','bishwas','shadhona','unnoti','bijoy',
+    // ── Romanised Bangla (extended) ───────────────────────────────────────────
+    'valo lage','bhalo lage','valo lagche','bhalo lagche','valo laglo','bhalo laglo',
+    'sundor laglo','darun laglo','oshadharon laglo','ki je sundor','ato sundor','eto valo',
+    'mon vora gelo','mon vore gelo','mon bhore gelo','khub valo laglo','onek valo laglo',
+    'dua kori','doa kori','allah rakho','allah hafez','allah hafeez','allah bless koro',
+    'shuvo','subho','mubarok','mubarak','eid mubarak','happy birthday','birthday mubarak',
+    'congratulations bhai','congratulations apu','congrats bhai','congrats apu',
+    'ki sundor bhai','bhai love','apu love','apu sundor','bhai oshadharon',
+    'pagol hoye gelam','pagol hoe gelam','pagol hoya gelam','haiya gelam','haira gelam',
+    'mon khushi','mon vore gelo','ananda','anondo','khub anondo','onek anondo',
+    'boro asha','onek asha','valo thakbe','valo thakun','shusto thakun','sustha thakun',
+    'allah apnar bhalo koruk','allah tomar bhalo koruk','dua rakhben','doa rakhben',
+    'onek onek shuvo kamona','shuvo kamona','shuvokamona','onek shuvo kamona',
+    'mon chhuye gelo','mon chhuiye gelo','onuvuti','anuvooti','hridoy sparsha',
+    'sotti bolchi','sotti kotha','ekdom sotti','satyi','sotti satyi','satty kotha',
+    'bah','wah','koto sundor','koto valo','koto darun','ki osaddharaon',
+    'boro valo laglo','onek valo laglo','khub sundor laglo','darun lagche',
+    'amar priyo','priyo manush','priyo bhai','priyo apu','priyo bondhu',
+    'respect kori','onek respect','boro respect','salute kori','hat khula salaam',
+    'beshi valo','khub beshi valo','onek beshi valo','ato valo','eto darun',
+    'joss ache','joss acho','darun ache','oshadharon ache','fatafati ache',
+    'notun kichhu','notun kichu','notun kora','notun shuru','noya jibon',
+    'valo beshi','valobashi','bhalobashi','valobasi','bhalobasi','valobasa','bhalobasa',
+    'sundor hoyeche','darun hoyeche','valo hoyeche','oshadharon hoyeche','fatafati hoyeche',
+    'aro chai','aro den','aro dekhte chai','aro shunbo','aro porbo',
+    'koto valo manush','koto boro hridoy','koto sohoj','koto shorol',
+    'khushir kotha','anonder kotha','valobasar kotha','priyer kotha',
+    'allah apnake valo rakhuk','alla tader valo rakhuk','khoda hafez',
+    'ki obbhut','obbhut sundor','ajob sundor','ajob darun','ajob valo',
+    'moner moto','moner kotha','mone dhoreche','mone chuye geche','mone porbe',
+    'jibon sundor','jibon darun','jibon valo','sundar jibon','darun jibon',
+    // ── Bangla ───────────────────────────────────────────────────────────────
     'ভালো','সুন্দর','দারুণ','অসাধারণ','ধন্যবাদ','ভালোবাসি','মাশাল্লাহ','আলহামদুলিল্লাহ',
     'শুকরিয়া','অনেক ভালো','খুব ভালো','চমৎকার','অপূর্ব','প্রেম','শুভেচ্ছা',
+    'অভিনন্দন','সাহসী','বিজয়','সফলতা','আনন্দ','খুশি','ভালোবাসা','সম্মান',
+    'গর্ব','আশীর্বাদ','কৃতজ্ঞ','উৎসাহ','প্রেরণা','বিশ্বাস','শান্তি','সুখী',
+    'মনোরম','প্রিয়','ভালো লাগলো','অনেক ভালো লাগলো','চমৎকার কাজ','অপূর্ব সুন্দর',
+    'সত্যি সুন্দর','দুর্দান্ত','অনন্য','উপকারী','অনেক মজা','পছন্দ হয়েছে',
+    'সেরা','ভালোই হয়েছে','একদম সঠিক','বেস্ট','জটিল','মাসা আল্লাহ',
+    'সুন্দর মন','ভালো মানুষ','সত্যিই সুন্দর','অনেক সুন্দর','খুব সুন্দর',
+    'একদম ভালো','এত সুন্দর','অনেক খুশি','খুব খুশি','আশা করি','ভালো থাকো',
+    'সুস্থ থাকো','দোয়া রইলো','অনেক ধন্যবাদ','ভালো কাজ','অসাধারণ কাজ',
+    'চমৎকার লাগলো','দারুণ হয়েছে','খুব ভালো হয়েছে','সত্যিকারের ভালো',
+    'মনে ধরেছে','পছন্দ','ভীষণ ভালো','অনেক প্রিয়','হৃদয় স্পর্শ করলো',
+    'অনুপ্রাণিত','উদ্বুদ্ধ','শ্রেষ্ঠ','উত্তম','মঙ্গল','আলো','শক্তি','সাফল্য',
+    // ── Bangla (extended) ─────────────────────────────────────────────────────
+    'ভালো লাগছে','ভালো লেগেছে','ভালো লাগে','খুব ভালো লাগছে','অনেক ভালো লাগছে',
+    'সুন্দর লাগছে','দারুণ লাগছে','অসাধারণ লাগছে','চমৎকার লাগছে','অপূর্ব লাগছে',
+    'মন ভরে গেলো','মন ভরে গেছে','মন খুশি হলো','মন আনন্দিত','অনেক খুশি লাগছে',
+    'বাহ','আহা','বাহ বাহ','আহা হা','কী সুন্দর','কত সুন্দর','কী দারুণ','কত দারুণ',
+    'কী অসাধারণ','কত অসাধারণ','কী চমৎকার','কত চমৎকার','কী অপূর্ব',
+    'শুভ','শুভকামনা','শুভ হোক','শুভ থাকুন','শুভ থাকো','আল্লাহ ভালো রাখুক',
+    'আল্লাহ রক্ষা করুক','আল্লাহ হেফাজত করুক','দোয়া করি','দোয়া রইল',
+    'ইনশাআল্লাহ','মাশাআল্লাহ','সুবহানাল্লাহ','আলহামদুলিল্লাহ','জাজাকাল্লাহ',
+    'আমিন','ঈদ মুবারক','মোবারকবাদ','অভিনন্দন জানাই','শুভেচ্ছা জানাই',
+    'সালাম','সালাম জানাই','আদর','ভালোবাসা রইল','ভালোবাসা দিয়ে','হৃদয়ের শুভেচ্ছা',
+    'মুগ্ধ হলাম','মুগ্ধ হয়ে গেলাম','অভিভূত হলাম','অভিভূত','আপ্লুত','আপ্লুত হলাম',
+    'হৃদয় ছুঁয়ে গেলো','হৃদয় ছুঁয়ে গেছে','মন ছুঁয়ে গেলো','প্রাণ ছুঁয়ে গেলো',
+    'একমত','সহমত','একদম সঠিক','সত্য কথা','একদম মনের কথা','মনের কথা বললেন',
+    'সঠিক বলেছেন','ঠিক বলেছেন','ঠিক আছে','একেবারে ঠিক','পুরোপুরি সঠিক',
+    'গর্বিত','অনেক গর্বিত','খুব গর্বিত','গর্ব হচ্ছে','গর্ব লাগছে','আমি গর্বিত',
+    'অনুপ্রেরণা','প্রেরণাদায়ক','উৎসাহিত','উৎসাহজনক','মনোবল','সাহস','সাহসী কাজ',
+    'চমৎকার লেখা','অসাধারণ লেখা','দারুণ লেখা','সুন্দর লেখা','অপূর্ব লেখা',
+    'জীবন সুন্দর','জীবন দারুণ','জীবন ভালো','সুন্দর জীবন','আনন্দময় জীবন',
+    'ভালো মানুষ','সুন্দর মন','ভালো হৃদয়','বড় হৃদয়','উদার','উদার মন',
+    'পরোপকারী','দয়ালু','সহানুভূতিশীল','মানবিক','মানবতাবাদী','মানবতা',
+    'আশা আছে','আশার আলো','নতুন আশা','নতুন দিন','নতুন সূচনা','নতুন যাত্রা',
+    'ভালোবাসি','ভালোই বাসি','অনেক ভালোবাসি','খুব ভালোবাসি','ভালোবাসা দিয়ে',
+    'পছন্দ করি','অনেক পছন্দ','খুব পছন্দ','একদম পছন্দ','মনে পছন্দ',
+    'অসম্ভব ভালো','অকল্পনীয়','অবিশ্বাস্য সুন্দর','অতুলনীয়','তুলনাহীন',
+    'সেরাদের সেরা','সর্বশ্রেষ্ঠ','অনন্যসাধারণ','অনবদ্য','নিখুঁত',
+    'হাজার হাজার ধন্যবাদ','লক্ষ ধন্যবাদ','অসংখ্য ধন্যবাদ','আন্তরিক ধন্যবাদ',
 ];
 const NEGATIVE_WORDS = [
+    // ── English ───────────────────────────────────────────────────────────────
     'bad','terrible','awful','horrible','hate','dislike','ugly','worst','poor','sad',
     'angry','wrong','false','lie','liar','fake','fraud','scam','cheat','disgusting',
     'stupid','idiot','fool','dumb','useless','pathetic','shameful','shame','disgrace',
     'boring','waste','spam','annoying','irritating','toxic','disappointed','criminal',
+    'abuse','abusive','aggressive','arrogant','attack','betrayal','bitter','blame',
+    'brutal','bully','corrupt','coward','cruel','danger','dangerous','deceive','deceiving',
+    'depressed','depression','destroy','dirty','dishonest','evil','failure','fear',
+    'filthy','garbage','greedy','gross','guilty','harmful','hopeless','humiliate',
+    'hypocrite','ignorant','immoral','incompetent','inferior','insult','jealous','lazy',
+    'manipulative','mean','miserable','mislead','mock','nasty','negative','neglect',
+    'offensive','outrage','pitiful','racist','rude','ruthless','selfish','sinister',
+    'suck','threatening','trash','unfair','untrustworthy','vile','violent','vulgar',
+    'weak','worthless','wicked','witch','witch hunt','loser','loathe','lame',
+    'curse','cursed','creep','crook','con','coerce','chaos','careless','broken',
+    'abhorrent','abnormal','appalling','atrocious','betrayed','biased','bigot',
+    'blackmail','brainwash','chaotic','cheated','childish','clueless','cold','condemn',
+    'conflict','confrontation','creepy','cynical','dark','dead','deceitful',
+    'defame','demeaning','demon','deny','deprive','detest','devious','disaster','disgust',
+    'disrespect','disrupt','distort','disturbing','dominate','dread','dull','dupe',
+    'enrage','exploit','extort','extreme','fanatic','flawed','foolish','force',
+    'frustrate','furious','gang','greed','grim','grudge','hardship','harsh','hatred',
+    'heartless','hostile','hurt','hypocritical','injustice','irresponsible','irrational',
+    'murder','kill','killing','killed','hang','hanging','hanged','execute','execution',
+    'malpractice','negligence','incompetence','misconduct','punish','punishment',
+    // ── English (extended) ────────────────────────────────────────────────────
+    'damn','hell','crap','jerk','moron','imbecile','clown','joke','nonsense','rubbish',
+    'ridiculous','absurd','outrageous','scandalous','unacceptable','intolerable','unbearable',
+    'shameless','corrupt leader','autocrat','dictator','fascist','oppressor','oppression',
+    'terrorist','traitor','backstabber','thief','robber','rapist','criminal act',
+    'liar liar','stop lying','stop cheating','propaganda','brainwashed','brainwashing',
+    'how dare','how dare you','how dare they','shame on you','shame on them','shame on him','shame on her',
+    'cannot believe','cant believe','i cant believe','unbelievable','unacceptable behavior',
+    'disgusted','sickened','revolted','repulsed','revolting','repulsive',
+    'not okay','not ok','this is wrong','this is bad','this is terrible','this is horrible',
+    'so wrong','very wrong','completely wrong','totally wrong','absolutely wrong',
+    'so bad','very bad','really bad','extremely bad','incredibly bad','terribly bad',
+    'i hate','i hate this','i hate them','i hate it','hate this','hate it','hate them',
+    'i dislike','dislike this','not good','no good','not right','not fair','unfair treatment',
+    'worst ever','absolute worst','the worst','never seen worse','never been worse',
+    'stop this','stop now','must stop','needs to stop','has to stop','should stop',
+    'arrest','arrested','jail','prison','locked up','behind bars','accountability',
+    'demand justice','justice for','punish them','punish him','punish her','punish this',
+    'protest','protesting','boycott','boycotting','reject','rejected','opposition',
+    'condemn','condemnation','denounce','denouncing','criticize','criticism','critique',
+    'problem','problems','issue','issues','crisis','catastrophe','disaster','mess',
+    'failed','failing','has failed','is failing','massive failure','epic fail','total failure',
+    'disappointed','deeply disappointed','very disappointed','so disappointed',
+    'frustrated','very frustrated','so frustrated','angry','very angry','enraged',
+    'depressing','very depressing','so depressing','heartbreaking','heart breaking',
+    'this hurts','it hurts','pain','painful','agony','suffering','anguish',
+    'victim','victims','oppressed','silenced','censored','suppressed',
+    // ── Romanised Bangla ─────────────────────────────────────────────────────
     'kharap','bekar','baje','jhut','mithha','faltu','ganda','ghrina','nafrat','pagol',
+    'besharmo','bevakuf','chor','dhoka','harami','kutta','moron','noshto','pakna',
+    'shala','shob jhut','thug','besharam','oshhosto','manushna','dhokha deyar',
+    'kharap manush','boro bad','onek kharap','ki kharap','ei bad','sobai bad',
+    'khub kharap','etota kharap','nishthur','protarok','durnoiti','oporadhi',
+    'noshto manush','jhuter dal','kharap kaj','pagla','oshhosto manush',
+    'dushto','alosh','okorma','beyadob','ohongkari','sharthopor','kapurush',
+    'bhondo','mithhuker dal','birokkhito','onek khrap','faltu manush',
+    'fasi','phansi','hatya','maro','mar ','maralo','marilay','batpar','bichar chai',
+    'dhik','dhikkhar','pocha','dhongso','moruk','bogar','shalar','sala manush',
+    'rajakar','dalal','shuyor','pa chata','mob','dajjal','khankir pola','heda','heda manush',
+    // ── Romanised Bangla (extended) ───────────────────────────────────────────
+    'ghrina kori','onek ghrina','ghrina lagche','khub ghrina','boro ghrina',
+    'lojja lagche','ki lojja','onek lojja','khub lojja','lojjajonok',
+    'raga lagche','onek raga','khub raga','boro raga','raga hocche','ami ragi',
+    'mone hoy na','thik na','ei kaj thik na','kharap kaj korecho','eto kharap keno',
+    'jhut kotha','mithhe kotha','shotti na','ei jhut','shob jhut','jhuther dal',
+    'tumi kharap','o kharap','she kharap','tara kharap','shobai kharap',
+    'onek kharap kaj','amra raji na','notun fande feleche','abar dhoka',
+    'ki oshovyo','opomankar','nishthurer dal','shadhin na','beshi kharap',
+    'chokh tule dekhte paro na','manushik na','manush na','pashu','boro pashu',
+    'chor chor','thag thag','dhormer kothay adhorm','bichar chai','bichar hok',
+    'shamne asho','baire asho','uttor dao','jabab dao','hishab dao',
+    'chap diye racho','jhame poreche','bipoode poreche','shotru','boro shotru',
+    'prokrito shotru','durotto thako','dur thako','door hao',
+    'bebostha','durvoga','dukher kotha','koster kotha','jontrona','perao',
+    'opomaon','opomaner','opomaonito','opomaon kora','opomaon hoyeche',
+    'mithhuker shongho','dornoitir shongho','bicharhoeen','bicharheen',
+    'mene nibo na','mante parchi na','shojjo nai','shojjo hocche na','aro shojjo na',
+    // ── Bangla ───────────────────────────────────────────────────────────────
     'খারাপ','বাজে','ঘৃণা','মিথ্যা','ফালতু','বেকার','বিরক্ত','রাগ','দুঃখ','কষ্ট','লজ্জা',
+    'ঘৃণ্য','নিষ্ঠুর','অসৎ','প্রতারক','দুর্নীতি','অপমান','ক্রোধ','হতাশ',
+    'বিপদ','ক্ষতি','ধোঁকা','চোর','সহিংস','ভয়','অন্যায়','নষ্ট',
+    'মিথ্যুক','কপট','দুষ্ট','অলস','অকর্মা','বেশরম','বেহায়া',
+    'ঘৃণা করি','একদম বাজে','বাজে মানুষ','খুব খারাপ','মন্দ','ক্ষতিকর',
+    'অপরাধী','অযোগ্য','নির্লজ্জ','বেআদব','অহংকারী','স্বার্থপর',
+    'কাপুরুষ','প্রতারণা','ভণ্ড','ধোঁকাবাজ','ধোকা','খুব বাজে',
+    'একদম খারাপ','অনেক খারাপ','এত খারাপ','কেন এত খারাপ',
+    'বিরক্তিকর','অসহ্য','রাগ লাগছে','রাগান্বিত','মন খারাপ',
+    'হতাশাজনক','ব্যর্থ','ব্যর্থতা','শত্রু','ক্ষতিকারক','বিপজ্জনক',
+    'অবিশ্বাসযোগ্য','অনৈতিক','অন্যায়কারী','ক্ষমার অযোগ্য',
+    'লজ্জাজনক','অযোগ্য কাজ','খারাপ কাজ','মিথ্যাচার','জঘন্য',
+    // ── Additional Bangla: violence, demands for justice, insults ────────────
+    'ফাঁসি','হত্যা','হত্যাকাণ্ড','হত্যাকারী','খুন','খুনি',
+    'মারো','মারা','মার ','মারিয়া','মারিলায়','মেরে ফেলো','মেরে ফেলুন',
+    'শালার','শালা','হারামি','কুকুর','গাধা','বেজন্মা','জানোয়ার',
+    'বাটপার','বদমাশ','দুষ্কৃতী','সন্ত্রাসী','গুন্ডা',
+    'বিচার চাই','বিচার দাও','বিচার হোক','ন্যায়বিচার চাই',
+    'ধিক্','ধিক্কার','ছিঃ','ছি ছি','থু','থু থু',
+    'নিকৃষ্ট','পচা','বগার','ধ্বংস','ধ্বংস হোক','মরুক','মরে যাক',
+    'বন্ধ করো','বন্ধ করা দরকার','বন্ধ হোক',
+    'অপদার্থ','নালায়েক','মূর্খ','অকেজো','দায়িত্বহীন','গাফিলতি','অবহেলা',
+    'রাজাকার','দালাল','শুয়োর','গু','পা চাটা','মব','মাদারবোর্ড','দজ্জাল','চুদ লিং পাং',
+    // ── Bangla (extended) ─────────────────────────────────────────────────────
+    'ঘৃণা লাগছে','ঘৃণা হচ্ছে','ঘৃণা করছি','অসম্মানজনক','অপমানজনক','অপমান করা',
+    'কতটা খারাপ','কত খারাপ','কী খারাপ','এতটা খারাপ','এত বাজে','এতটা বাজে',
+    'অসভ্য','অভদ্র','নোংরা','নোংরা মানসিকতা','নিচু মানসিকতা','নিচু মনের',
+    'বেআইনি','অবৈধ','দুর্নীতিবাজ','দুর্নীতিগ্রস্ত','প্রতারণামূলক','প্রতারণাপূর্ণ',
+    'অন্যায়ভাবে','অন্যায় কাজ','মিথ্যাবাদী','কুচক্রী','চক্রান্তকারী','ষড়যন্ত্রকারী',
+    'অসৎ মানুষ','চোরের দল','ঘৃণ্য কাজ','ক্ষমার অযোগ্য কাজ','মাফ করার যোগ্য না',
+    'এটা মেনে নেওয়া যায় না','মেনে নেব না','মানছি না','মানা যায় না','অগ্রহণযোগ্য',
+    'বয়কট','প্রতিবাদ করি','নিন্দা জানাই','ধিক্কার জানাই','শাস্তি চাই',
+    'এরকম হওয়া উচিত না','হওয়া উচিত হয়নি','কেন করলে এটা','কেন করলেন',
+    'রাগ হচ্ছে','অনেক রাগ লাগছে','অসহ্য লাগছে','সহ্য হচ্ছে না','মাথায় রাগ উঠেছে',
+    'মন ভেঙে গেছে','মনটা খারাপ','মন খারাপ হয়ে গেলো','কান্না আসছে','চোখে জল',
+    'দুঃখজনক','বেদনাদায়ক','হৃদয়বিদারক','কষ্টকর','যন্ত্রণাদায়ক','পীড়াদায়ক',
+    'আতঙ্কিত','ভয় লাগছে','ভয় পাচ্ছি','আতঙ্ক','ভীত','আতঙ্কজনক',
+    'নির্যাতন','নির্যাতিত','অত্যাচার','অত্যাচারিত','নিপীড়ন','নিপীড়িত',
+    'নিষ্ঠুরতা','নৃশংসতা','বর্বরতা','পশুত্ব','অমানবিক','অমানবিকতা',
+    'দোষী','অপরাধ','অপরাধমূলক','বিচারহীন','বিচারহীনতা','দায়মুক্তি',
+    'স্বৈরাচার','স্বৈরশাসন','একনায়কতন্ত্র','ফ্যাসিবাদ','দমনপীড়ন',
+    'বিশ্বাসঘাতক','বিশ্বাসঘাতকতা','পিঠে ছুরি মারা','ধোঁকাবাজি',
+    'ক্ষমা নেই','ক্ষমা করব না','ক্ষমা করা যায় না','ক্ষমার যোগ্য না',
+    'সমালোচনা করি','নিন্দা করি','প্রতিবাদ জানাই','আওয়াজ তুলি','রুখে দাঁড়াই',
+    'এই সরকার','এই নেতা','এই দল','এদের বিরুদ্ধে','এর বিরুদ্ধে',
+    'দুর্নীতিমুক্ত চাই','পরিবর্তন চাই','বদল চাই','সংস্কার চাই',
 ];
 const EMOJI_POS = ['❤️','😍','😊','🥰','👍','🙏','💕','😁','✨','🌟','😃','😄','🎉','🎊','👏','💯','🔥','⭐','🌈','😇','🤩','💪','🙌','💖','💝','🌹','🌸','🤗','😘','🫶','🥳'];
 const EMOJI_NEG = ['😡','😠','👎','🤮','😤','💔','😢','😭','🤬','😒','😔','😞','😟','😣','😩','😫','🤢','💀','🖕','🤦','😰','😱','🥺'];
@@ -126,7 +374,7 @@ function isBangla(text) {
 //   Batches CHUNK comments per call; retries once on failure; 450 ms throttle.
 // ═════════════════════════════════════════════════════════════════════════════
 const _TSEP  = '\n◈◈◈\n';
-const _CHUNK = 15;
+const _CHUNK = 30;   // 30 texts per API call — halves the number of requests vs 15
 
 async function _translateChunk(texts, retry) {
     const joined = texts.join(_TSEP);
@@ -173,7 +421,7 @@ async function translateResults(results) {
         const txts  = slice.map(i => results[i].comment);
         const trans = await _translateChunk(txts, false);
         slice.forEach((idx, j) => { txMap[idx] = trans[j]; });
-        await sleep(450);
+        await sleep(300);   // was 450 — still safe from rate limiting
     }
 
     return results.map((r, i) => {
@@ -213,7 +461,7 @@ function sentiment(text) {
 }
 
 // Facebook UI strings that should never be treated as comment text
-const _UI_RE = /^(like|reply|see translation|write a (comment|reply)|most relevant|all comments|newest first|\d+[smhdwy]|\d+\s+(like|love|reaction|comment|share)s?|follow|share|view profile|view more|hide repl(y|ies)|load more|top comments)$/i;
+const _UI_RE = /^(like|reply|see translation|write a (comment|reply)|most relevant|all comments|newest first|\d+[smhdwy]|\d+\s+(like|love|reaction|comment|share)s?|follow|share|view profile|view more|hide repl(y|ies)|load more|top comments|comment|comments|view\s+\d+\s+repl(y|ies)|[\d,.]+\s*[kmbt]?\s+views?)$/i;
 function isUIText(t) {
     if (!t || t.length < 2) return true;
     const s = t.trim();
@@ -261,7 +509,22 @@ function buildCSV(data) {
 }
 
 function downloadCSV(data, filename = 'fb_sentiment.csv') {
-    chrome.runtime.sendMessage({ action: 'downloadCSV', csv: buildCSV(data), filename });
+    const csv = buildCSV(data);
+    try {
+        // Direct Blob download — avoids Chrome IPC size limit for large datasets
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { URL.revokeObjectURL(url); a.remove(); } catch (_) {} }, 3000);
+    } catch (e) {
+        // Fallback: route through background script (works for smaller datasets)
+        chrome.runtime.sendMessage({ action: 'downloadCSV', csv, filename });
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -451,14 +714,12 @@ function findAllComments() {
 }
 
 function findCommentBtns() {
-    // Text-content based (class-agnostic) — primary strategy
+    // textContent avoids layout reflows that innerText triggers
     let els = Array.from(document.querySelectorAll('span,a'))
-        .filter(el => /^\d+\s+comments?$/i.test((el.innerText || '').trim()));
+        .filter(el => /^\d+\s+comments?$/i.test((el.textContent || '').trim()));
     if (els.length) return els;
-    // Broader match (e.g. "123 Comments · 45 Shares")
     els = Array.from(document.querySelectorAll('span,a'))
-        .filter(el => /\d+\s+comments?/i.test((el.innerText || el.textContent || '').trim()) &&
-                      (el.innerText || el.textContent || '').trim().length < 40);
+        .filter(el => { const t = (el.textContent || '').trim(); return /\d+\s+comments?/i.test(t) && t.length < 40; });
     return els;
 }
 
@@ -478,25 +739,30 @@ function findViewMoreBtns(root) {
     ];
     const ALL_KW = [...KEYWORDS_EN, ...KEYWORDS_BN];
 
+    const REPLY_COUNT_RE = /view\s+\d+\s+repl(y|ies)/i;
+
     const seen  = new Set();
     const found = [];
 
-    // Check role="button" elements directly AND spans within them
-    for (const el of r.querySelectorAll('[role="button"], button, div[role="button"]')) {
-        const t = (el.innerText || el.textContent || '').trim();
+    // :not([data-fbvm]) skips already-clicked buttons → prevents O(n²) re-scan.
+    // textContent (not innerText) avoids expensive layout reflows.
+    for (const el of r.querySelectorAll('[role="button"]:not([data-fbvm]), button:not([data-fbvm])')) {
+        const t = (el.textContent || '').trim();
         if (!t || t.length > 120) continue;
         const tl = t.toLowerCase();
-        if (ALL_KW.some(k => tl.includes(k.toLowerCase()))) {
+        if (ALL_KW.some(k => tl.includes(k.toLowerCase())) || REPLY_COUNT_RE.test(t)) {
             if (!seen.has(el)) { seen.add(el); found.push(el); }
         }
     }
 
     // Also check span.xdmh292 (the old class) as supplemental
     for (const el of r.querySelectorAll('span.xdmh292')) {
-        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+        const t = (el.textContent || '').trim().toLowerCase();
         if (ALL_KW.some(k => t.includes(k.toLowerCase()))) {
             const btn = el.closest('[role="button"],button') || el;
-            if (!seen.has(btn)) { seen.add(btn); found.push(btn); }
+            if (!btn.hasAttribute('data-fbvm') && !seen.has(btn)) {
+                seen.add(btn); found.push(btn);
+            }
         }
     }
 
@@ -518,6 +784,9 @@ function findViewMoreBtns(root) {
 //   Secondary fallback: scan the dialog's children for any scrollable div.
 // ─────────────────────────────────────────────────────────────────────────────
 function findCommentScrollArea() {
+    // Return cached value if still in DOM — avoids expensive BFS on every loop iteration
+    if (_scrollArea && document.contains(_scrollArea)) return _scrollArea;
+
     const root = getCommentRoot();
 
     // Strategy A — walk up from the first visible comment article
@@ -528,7 +797,7 @@ function findCommentScrollArea() {
             const cs = window.getComputedStyle(el);
             if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') &&
                 el.scrollHeight > el.clientHeight + 80) {
-                return el;
+                return (_scrollArea = el);
             }
             el = el.parentElement;
         }
@@ -537,7 +806,6 @@ function findCommentScrollArea() {
     // Strategy B — scan dialog children for any scrollable div (handles modal dialogs)
     const dialog = document.querySelector('[role="dialog"],[aria-modal="true"]');
     if (dialog) {
-        // BFS the dialog to find ALL scrollable nodes, pick deepest large one
         const queue = [dialog];
         const candidates = [];
         while (queue.length) {
@@ -551,22 +819,20 @@ function findCommentScrollArea() {
                 queue.push(child);
             }
         }
-        // Pick the one with the most articles (= the real comment container)
         candidates.sort((a, b) =>
             b.querySelectorAll('[role="article"]').length -
             a.querySelectorAll('[role="article"]').length
         );
-        if (candidates.length) return candidates[0];
+        if (candidates.length) return (_scrollArea = candidates[0]);
     }
 
-    // Strategy C — look for any element whose inline style has overflow:auto/scroll
-    //              (Facebook sometimes sets this inline rather than via CSS class)
+    // Strategy C — inline overflow style
     for (const el of document.querySelectorAll('div[style]')) {
         const s = el.getAttribute('style') || '';
         if (/overflow(-y)?:\s*(auto|scroll)/i.test(s) &&
             el.scrollHeight > el.clientHeight + 80 &&
             el.querySelector('[role="article"]')) {
-            return el;
+            return (_scrollArea = el);
         }
     }
 
@@ -652,7 +918,8 @@ async function sortToAllComments() {
         else await sleep(400);
     }
 
-    await sleep(1800);   // give Facebook time to reload the sorted list
+    _scrollArea = null;          // DOM was re-rendered — invalidate scroll cache
+    await sleep(1400);           // was 1800 — FB usually reloads within 1.2 s
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -665,7 +932,11 @@ function harvestVisible(seen, postLabel) {
     const root = getCommentRoot();
 
     // ── Strategy 1: role="article" blocks ───────────────────────────────────
-    for (const block of root.querySelectorAll('[role="article"]')) {
+    // :not([data-fbsc]) skips already-processed articles → prevents O(n²) rescan
+    for (const block of root.querySelectorAll('[role="article"]:not([data-fbsc])')) {
+        // Mark immediately so we never re-process this node, even if it yields nothing
+        block.setAttribute('data-fbsc', '1');
+
         // Skip the main post article (it contains h1/h2)
         if (block.querySelector('h1,h2,h3')) continue;
 
@@ -681,8 +952,10 @@ function harvestVisible(seen, postLabel) {
         if (!name) continue;
 
         // Comment text — pick the longest non-UI text div/span with dir="auto"
+        // Skip elements inside <a> tags — those are commenter names or @mentions, not comment body.
         let comment = '';
         for (const td of block.querySelectorAll('div[dir="auto"], span[dir="auto"]')) {
+            if (td.closest('a')) continue;
             const t = getText(td);
             if (t && t !== name && !isUIText(t) && t.length > comment.length) comment = t;
         }
@@ -696,8 +969,10 @@ function harvestVisible(seen, postLabel) {
     }
 
     // ── Strategy 2: walk-up fallback (when no articles found) ───────────────
-    if (out.length === 0) {
+    // Only activate when there are truly no article containers visible at all
+    if (out.length === 0 && root.querySelectorAll('[role="article"]').length < 2) {
         for (const textDiv of root.querySelectorAll('div[dir="auto"], span[dir="auto"]')) {
+            if (textDiv.closest('a')) continue;
             const comment = getText(textDiv);
             if (!comment || comment.length < 3 || isUIText(comment)) continue;
             let container = textDiv.parentElement;
@@ -746,9 +1021,11 @@ async function scrollAndCollect(seen, postLabel) {
         '\u0986\u09b0\u09cb \u09a6\u09c7\u0996\u09c1\u09a8',
         '\u0986\u09b0\u09cb\u0993 \u09a6\u09c7\u0996\u09c1\u09a8',
     ];
-    const MAX_IDLE  = 20;      // rounds with no new comments before giving up
-    const SCROLL_PX = 600;     // px per step
-    const MAX_ITEMS = 10000;   // capacity cap
+    const MAX_IDLE  = 20;
+    const SCROLL_PX = 800;     // larger step → fewer iterations
+    const MAX_ITEMS = 10000;
+
+    _scrollArea = null;        // reset scroll-area cache for this scrape run
 
     const results  = [];
     let idleRounds = 0;
@@ -759,49 +1036,48 @@ async function scrollAndCollect(seen, postLabel) {
     while (idleRounds < MAX_IDLE && !_stopped) {
         const root = getCommentRoot();
 
-        // 1. Click "View more comments / replies" — broad detection
+        // 1. Click "View more comments / replies"
+        //    Mark each button with data-fbvm before clicking so findViewMoreBtns
+        //    never returns it again — prevents re-clicking and O(n²) re-scan.
         const moreBtns = findViewMoreBtns(root);
         if (moreBtns.length) {
             for (const el of moreBtns) {
                 if (_stopped) return results;
+                el.setAttribute('data-fbvm', '1');
                 clickEl(el);
             }
-            // Wait longer after clicking "View more" — Facebook needs time to load
-            await sleep(2200);
+            await sleep(1600);   // was 2200 — FB usually responds within 1.5 s
         }
 
         // 2. Expand "See more" inside truncated comment text
-        for (const el of root.querySelectorAll('div[dir="auto"] span,[role="button"]>span')) {
+        //    Collect all matches first, click all at once, then wait once.
+        //    data-fbsm prevents re-checking already-visited buttons.
+        let seeMoreClicked = 0;
+        for (const el of root.querySelectorAll('[role="button"]:not([data-fbsm])')) {
             if (_stopped) return results;
-            const t = (el.textContent || '').trim().toLowerCase();
-            if (SEE_MORE_KW.some(s => t === s)) {
-                try { el.click(); } catch(e) {}
-                await sleep(120);
+            const t = (el.textContent || '').trim();
+            el.setAttribute('data-fbsm', '1');
+            if (t.length <= 20 && SEE_MORE_KW.some(s => t.toLowerCase() === s.toLowerCase())) {
+                try { el.click(); seeMoreClicked++; } catch(e) {}
             }
         }
+        if (seeMoreClicked > 0) await sleep(200);  // single wait, not per-click
 
         // 3. Harvest whatever is visible now
         const batch = harvestVisible(seen, postLabel);
-        results.push.apply(results, batch);
+        for (const item of batch) results.push(item);
 
-        // 4. SCROLL — always try the comment container first;
-        //             also scroll window (works on post permalink pages).
-        //             We no longer skip window scroll on non-post pages because
-        //             FB sometimes requires it even inside a dialog on feed pages.
+        // 4. Scroll — container first, then window as supplemental trigger
         const container = findCommentScrollArea();
         if (container) {
             const beforeTop = container.scrollTop;
             container.scrollTop += SCROLL_PX;
-            // If container is at the very bottom, nudge it again
-            if (container.scrollTop === beforeTop) {
-                container.scrollTop = container.scrollHeight;
-            }
+            if (container.scrollTop === beforeTop) container.scrollTop = container.scrollHeight;
         }
-        // Always try window scroll as supplemental trigger
         window.scrollBy(0, SCROLL_PX);
         document.documentElement.scrollTop += SCROLL_PX;
 
-        await sleep(container ? 1100 : 1500);
+        await sleep(container ? 800 : 1000);   // was 1100 / 1500
 
         // 5. Track idle rounds (only increment when truly nothing new)
         const currentSize = seen.size;
@@ -952,7 +1228,7 @@ async function scrapeAllPosts() {
                 await sortToAllComments();
                 if (!_stopped) {
                     const postData = await scrollAndCollect(seen, 'Post ' + (processed + 1));
-                    all.push.apply(all, postData);
+                    for (const item of postData) all.push(item);
                     showStatus('Post ' + (processed + 1) + ': ' + postData.length + ' comments\nTotal: ' + all.length);
                 }
                 await closeCurrentComments(prevURL, btn);
