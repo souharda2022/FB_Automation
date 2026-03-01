@@ -2,9 +2,16 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // USER-PROVIDED PATTERNS
 // ═════════════════════════════════════════════════════════════════════════════
-const MOST_RELEVANT_XPATH = '/html/body/div[1]/div/div[1]/div/div[4]/div/div/div[1]/div/div[2]/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div/div[2]/div[1]/div/div/span';
-const ALL_COMMENTS_XPATH  = '/html/body/div[1]/div/div[1]/div/div[4]/div/div/div[1]/div/div[3]/div/div/div[1]/div[1]/div/div/div/div/div/div/div[1]/div/div[2]/div[1]/div/div[1]/span';
-const COMMENTS_BTN_XPATH  = '/html/body/div[1]/div/div[1]/div/div[3]/div/div/div[1]/div[1]/div/div/div[4]/div[2]/div/div[2]/div[2]/div[1]/div/div/div/div/div/div/div/div/div/div/div/div[13]/div/div/div[4]/div/div/div[1]/div/div[1]/div/div[2]/div[2]/span/div/span/span';
+// XPaths updated to match Facebook DOM as of 2026-03-01.
+// Primary detection is aria-role based; these are fallbacks only.
+const MOST_RELEVANT_XPATH = '/html/body/div[1]/div/div[1]/div/div[4]/div/div/div[1]/div/div[2]/div/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div/div[2]/div[1]/div/div/span';
+// Points to the dropdown CONTAINER div; sortToAllComments() searches inside it for the menuitem.
+const ALL_COMMENTS_XPATH  = '/html/body/div[1]/div/div[1]/div/div[4]/div/div/div[1]/div/div[3]/div/div[1]/div[1]/div[1]/div/div/div/div/div/div/div[1]/div/div[3]';
+// Two comment-button layouts observed in the wild (div[3] vs div[4] in the path):
+// Layout A — feed / group posts
+const COMMENTS_BTN_XPATH  = '/html/body/div[1]/div/div[1]/div/div[3]/div/div/div[1]/div[1]/div/div[2]/div/div/div/div[2]/div/div[4]/div/div[2]/div[1]/div/span/div/div/div/div/div/div/div/div/div/div/div/div/div[13]/div/div/div[4]/div/div/div/div/div[1]/div/div[2]/div[2]/span/div/span/span';
+// Layout B — video / photo / permalink posts
+const COMMENTS_BTN_XPATH_2 = '/html/body/div[1]/div/div[1]/div/div[4]/div/div/div[1]/div/div[2]/div/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div/div[1]/div/div[1]/div/div[2]/div[2]/span/div/span/span';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // GLOBAL STATE
@@ -461,7 +468,7 @@ function sentiment(text) {
 }
 
 // Facebook UI strings that should never be treated as comment text
-const _UI_RE = /^(like|reply|see translation|write a (comment|reply)|most relevant|all comments|newest first|\d+[smhdwy]|\d+\s+(like|love|reaction|comment|share)s?|follow|share|view profile|view more|hide repl(y|ies)|load more|top comments|comment|comments|view\s+\d+\s+repl(y|ies)|[\d,.]+\s*[kmbt]?\s+views?)$/i;
+const _UI_RE = /^(like|reply|see translation|write a (comment|reply)|most relevant|all comments|newest first|\d+[smhdwy]|\d+\s+(like|love|reaction|comment|share)s?|follow|share|view profile|view more|hide repl(y|ies)|load more|top comments|comment|comments|view\s+(\w+\s+)?\d+\s+repl(y|ies)|[\d,.]+\s*[kmbt]?\s+views?|see all|notifications?|unread|not now|turn on|turn off|earlier|mark all as read|push notifications?|mark as read|all caught up|no new notifications?|settings?)$/i;
 function isUIText(t) {
     if (!t || t.length < 2) return true;
     const s = t.trim();
@@ -486,7 +493,8 @@ function isUIText(t) {
 function buildCSV(data) {
     const hasPosts = data.some(r => r.post && r.post !== '');
     const hasTrans = data.some(r => r.translatedComment && r.translatedComment !== '');
-    const q = s => '"' + String(s || '').replace(/"/g, '""') + '"';
+    // Use ?? instead of || so that 0 / false / NaN are not coerced to empty string.
+    const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
 
     const hdrs = [];
     if (hasPosts) hdrs.push('Post');
@@ -652,15 +660,16 @@ async function waitFor(fn, ms) {
 function fireClick(el) {
     if (!el) return;
     try { el.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch(e) {}
-    try { el.click(); } catch(e) {}
     try {
         const r = el.getBoundingClientRect();
         const x = r.left + r.width / 2, y = r.top + r.height / 2;
         const o = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y };
-        ['pointerdown','pointerup','mousedown','mouseup','click'].forEach(t =>
+        // Only pointer-down/up — no synthetic 'click' here; el.click() below fires the real one
+        ['pointerdown','mousedown','pointerup','mouseup'].forEach(t =>
             el.dispatchEvent(new PointerEvent(t, Object.assign({}, o, { pointerId: 1, pointerType: 'mouse', isPrimary: true })))
         );
     } catch(e) {}
+    try { el.click(); } catch(e) {}   // single click — not double
 }
 
 function clickEl(el) {
@@ -682,17 +691,14 @@ function byXPath(xpath) {
 // ═════════════════════════════════════════════════════════════════════════════
 function findMostRelevant() {
     const root = getCommentRoot();
-    // Primary: any [role="button"] whose text starts with "Most relevant"
     for (const el of root.querySelectorAll('[role="button"]')) {
         const t = (el.innerText || el.textContent || '').trim();
         if (t === 'Most relevant' || (t.startsWith('Most relevant') && t.length < 40)) return el;
     }
-    // Secondary: any span with that exact text — return the nearest button ancestor
     for (const el of root.querySelectorAll('span')) {
         const t = (el.innerText || el.textContent || '').trim();
         if (t === 'Most relevant') return el.closest('[role="button"]') || el;
     }
-    // XPath fallback (user-supplied)
     return byXPath(MOST_RELEVANT_XPATH);
 }
 
@@ -714,12 +720,22 @@ function findAllComments() {
 }
 
 function findCommentBtns() {
-    // textContent avoids layout reflows that innerText triggers
+    // Handles plain counts ("134 comments") AND abbreviated counts ("1.4K comments",
+    // "5.2K comments", "2.1M comments") — the old /^\d+\s+comments?$/ failed on K/M values
+    // because "1.4K" contains a decimal and a letter that \d+ cannot match past the "1".
+    const EXACT_RE = /^[\d,.]+[KkMmBbTt]?\s+comments?$/i;
+    const LOOSE_RE = /[\d,.]+[KkMmBbTt]?\s+comments?/i;
+
     let els = Array.from(document.querySelectorAll('span,a'))
-        .filter(el => /^\d+\s+comments?$/i.test((el.textContent || '').trim()));
+        .filter(el => EXACT_RE.test((el.textContent || '').trim()));
     if (els.length) return els;
     els = Array.from(document.querySelectorAll('span,a'))
-        .filter(el => { const t = (el.textContent || '').trim(); return /\d+\s+comments?/i.test(t) && t.length < 40; });
+        .filter(el => { const t = (el.textContent || '').trim(); return LOOSE_RE.test(t) && t.length < 40; });
+    if (els.length) return els;
+    // Fallback: count ("134") and label ("Comments") may live in separate child spans
+    // inside a [role="button"] — match the button by its combined textContent.
+    els = Array.from(document.querySelectorAll('[role="button"]'))
+        .filter(el => { const t = (el.textContent || '').trim(); return LOOSE_RE.test(t) && t.length < 80; });
     return els;
 }
 
@@ -739,7 +755,13 @@ function findViewMoreBtns(root) {
     ];
     const ALL_KW = [...KEYWORDS_EN, ...KEYWORDS_BN];
 
-    const REPLY_COUNT_RE = /view\s+\d+\s+repl(y|ies)/i;
+    // Covers: "view 3 replies", "view all 3 replies", "see 5 more comments", etc.
+    // IMPORTANT: must NOT match "134 Comments" (the post's comment-open button).
+    // Old pattern `/\d+\s+(more\s+)?(comments?|repl(y|ies))/i` matched bare "N Comments"
+    // which on post-permalink pages (root=document) caused the scraper to keep clicking
+    // the wrong button.  New pattern requires an action verb OR "more" to be present.
+    const REPLY_COUNT_RE  = /view\s+(\w+\s+)?\d+\s+repl(y|ies)/i;
+    const NUM_COMMENT_RE  = /(\d+\s+more\s+(comments?|repl(y|ies))|(view|see|load|all)\s+(\w+\s+)?\d+\s+(comments?|repl(y|ies)))/i;
 
     const seen  = new Set();
     const found = [];
@@ -750,15 +772,20 @@ function findViewMoreBtns(root) {
         const t = (el.textContent || '').trim();
         if (!t || t.length > 120) continue;
         const tl = t.toLowerCase();
-        if (ALL_KW.some(k => tl.includes(k.toLowerCase())) || REPLY_COUNT_RE.test(t)) {
+        if (ALL_KW.some(k => tl.includes(k.toLowerCase())) || REPLY_COUNT_RE.test(t) || NUM_COMMENT_RE.test(t)) {
             if (!seen.has(el)) { seen.add(el); found.push(el); }
         }
     }
 
-    // Also check span.xdmh292 (the old class) as supplemental
+    // Also check span.xdmh292 (the old class) as supplemental.
+    // IMPORTANT: apply the same regex checks here — "View all 2 replies" matches
+    // NUM_COMMENT_RE and REPLY_COUNT_RE but does NOT match any ALL_KW keyword,
+    // so without the regex check these reply-expand buttons are silently missed,
+    // causing the scraper to hit MAX_IDLE early and stop before all replies load.
     for (const el of r.querySelectorAll('span.xdmh292')) {
-        const t = (el.textContent || '').trim().toLowerCase();
-        if (ALL_KW.some(k => t.includes(k.toLowerCase()))) {
+        const t  = (el.textContent || '').trim();
+        const tl = t.toLowerCase();
+        if (ALL_KW.some(k => tl.includes(k.toLowerCase())) || REPLY_COUNT_RE.test(t) || NUM_COMMENT_RE.test(t)) {
             const btn = el.closest('[role="button"],button') || el;
             if (!btn.hasAttribute('data-fbvm') && !seen.has(btn)) {
                 seen.add(btn); found.push(btn);
@@ -784,38 +811,41 @@ function findViewMoreBtns(root) {
 //   Secondary fallback: scan the dialog's children for any scrollable div.
 // ─────────────────────────────────────────────────────────────────────────────
 function findCommentScrollArea() {
-    // Return cached value if still in DOM — avoids expensive BFS on every loop iteration
     if (_scrollArea && document.contains(_scrollArea)) return _scrollArea;
 
     const root = getCommentRoot();
 
-    // Strategy A — walk up from the first visible comment article
+    // Helper: does this element have a scrollable overflow style?
+    // Includes 'overlay' — Chrome-specific value that Facebook uses frequently.
+    // No scrollHeight > clientHeight guard here: that check fails when only
+    // 1-2 comments are loaded and the container is not yet overflowing.
+    function canScroll(el) {
+        if (!el || el.clientHeight < 80) return false;
+        const ov = window.getComputedStyle(el).overflowY;
+        return ov === 'auto' || ov === 'scroll' || ov === 'overlay';
+    }
+
+    // Strategy A — walk up from first article; the first scrollable ancestor IS the
+    // comment scroll container.  No scrollHeight guard — it fails on fresh load.
     const firstArticle = root.querySelector('[role="article"]');
     if (firstArticle) {
         let el = firstArticle.parentElement;
         for (let i = 0; i < 25 && el && el !== document.body; i++) {
-            const cs = window.getComputedStyle(el);
-            if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') &&
-                el.scrollHeight > el.clientHeight + 80) {
-                return (_scrollArea = el);
-            }
+            if (canScroll(el)) return (_scrollArea = el);
             el = el.parentElement;
         }
     }
 
-    // Strategy B — scan dialog children for any scrollable div (handles modal dialogs)
-    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"]');
+    // Strategy B — BFS from dialog; collect all scrollable candidates and pick the
+    // one that contains the most articles (= the comment list container).
+    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"],[aria-modal]');
     if (dialog) {
         const queue = [dialog];
         const candidates = [];
         while (queue.length) {
             const node = queue.shift();
             for (const child of node.children) {
-                const cs = window.getComputedStyle(child);
-                if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') &&
-                    child.scrollHeight > child.clientHeight + 80) {
-                    candidates.push(child);
-                }
+                if (canScroll(child)) candidates.push(child);
                 queue.push(child);
             }
         }
@@ -826,28 +856,36 @@ function findCommentScrollArea() {
         if (candidates.length) return (_scrollArea = candidates[0]);
     }
 
-    // Strategy C — inline overflow style
+    // Strategy C — inline overflow style (catches elements with style attribute only)
     for (const el of document.querySelectorAll('div[style]')) {
         const s = el.getAttribute('style') || '';
-        if (/overflow(-y)?:\s*(auto|scroll)/i.test(s) &&
+        if (/overflow(-y)?:\s*(auto|scroll|overlay)/i.test(s) &&
             el.scrollHeight > el.clientHeight + 80 &&
             el.querySelector('[role="article"]')) {
             return (_scrollArea = el);
         }
     }
 
+    // Strategy D — height-based heuristic: walk up from first article and find
+    // the first div taller than the article.  Works even when overflow CSS is
+    // undetectable (e.g. very few comments loaded so container not yet overflowing).
+    if (firstArticle) {
+        const artH = firstArticle.clientHeight || 50;
+        for (let el = firstArticle.parentElement; el && el !== document.body; el = el.parentElement) {
+            if (el.tagName === 'DIV' && el.clientHeight > artH + 60 && el.clientHeight > 100) {
+                return (_scrollArea = el);
+            }
+        }
+    }
+
     return null;
 }
 
-// True when the comment section is visibly open — works even when the
-// "Most relevant" sort button uses a class name we haven't seen yet.
 function commentsAreOpen() {
     if (findMostRelevant()) return true;
     const root = getCommentRoot();
-    // ≥2 articles means at least the post + one real comment
     if (root.querySelectorAll('[role="article"]').length >= 2) return true;
-    // A dialog containing articles is the comment modal
-    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"]');
+    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"],[aria-modal]');
     if (dialog && dialog.querySelector('[role="article"]')) return true;
     return false;
 }
@@ -858,7 +896,14 @@ function isPostPage() {
 }
 
 function getCommentRoot() {
-    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"]');
+    // Priority 1: a dialog-like element that already has comment articles in it.
+    // This ensures harvestVisible() / findCommentScrollArea() scope to the right container
+    // even when multiple dialogs exist (e.g. notification panel + comment overlay).
+    for (const el of document.querySelectorAll('[role="dialog"],[aria-modal="true"],[aria-modal]')) {
+        if (el.querySelector('[role="article"]')) return el;
+    }
+    // Priority 2: any dialog element (articles may not be loaded yet at this call point).
+    const dialog = document.querySelector('[role="dialog"],[aria-modal="true"],[aria-modal]');
     if (dialog) return dialog;
     return document;
 }
@@ -871,7 +916,8 @@ async function openCommentSection() {
 
     const btns = findCommentBtns();
     if (!btns.length) {
-        const xEl = byXPath(COMMENTS_BTN_XPATH);
+        // Try both layout variants before giving up
+        const xEl = byXPath(COMMENTS_BTN_XPATH) || byXPath(COMMENTS_BTN_XPATH_2);
         if (xEl) btns.push(xEl); else return false;
     }
 
@@ -898,6 +944,24 @@ async function openCommentSection() {
 // ═════════════════════════════════════════════════════════════════════════════
 // PHASE 2+3: SORT TO "ALL COMMENTS"
 // ═════════════════════════════════════════════════════════════════════════════
+
+// Finds "All comments" ONLY inside an open dropdown menu — never matches
+// the sort-button label.  The old findAllComments() matched the label too,
+// causing sortToAllComments() to open/close the dropdown 8× unnecessarily.
+function findAllCommentsInDropdown() {
+    // Facebook uses different roles depending on layout: menuitem, option, radio, or plain button inside menu.
+    for (const sel of ['[role="menuitem"]', '[role="option"]', '[role="radio"]',
+                       '[role="menu"] [role="button"]',
+                       '[role="listbox"] [role="option"]',
+                       '[role="radiogroup"] [role="radio"]']) {
+        for (const el of document.querySelectorAll(sel)) {
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t === 'All comments' || t.startsWith('All comments')) return el;
+        }
+    }
+    return null;
+}
+
 async function sortToAllComments() {
     if (!findMostRelevant()) return;
     showStatus('Step 2/5: Opening sort dropdown...');
@@ -918,8 +982,8 @@ async function sortToAllComments() {
         else await sleep(400);
     }
 
-    _scrollArea = null;          // DOM was re-rendered — invalidate scroll cache
-    await sleep(1400);           // was 1800 — FB usually reloads within 1.2 s
+    _scrollArea = null;
+    await sleep(1400);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -927,6 +991,14 @@ async function sortToAllComments() {
 //   — Two strategies: role="article" (primary), walk-up (fallback)
 //   — Filters out Facebook UI strings (Like, Reply, time stamps, etc.)
 // ═════════════════════════════════════════════════════════════════════════════
+
+// These are defined once outside the loop for performance (no per-article RegExp allocation).
+const _SKIP_HREF  = /\/(notifications|settings|watch|marketplace|gaming|groups\/discover|pages\/create|hashtag|reels)\//i;
+// __tn__ is a Facebook tracking param appended to PROFILE links (e.g. /john.doe?__tn__=R).
+// Blocking it caused the fallback to reject every valid profile link → all names failed → 0 comments.
+// Only comment_id and reaction_id reliably indicate non-profile links.
+const _SKIP_PARAM = /[?&](comment_id|reaction_id)/i;
+
 function harvestVisible(seen, postLabel) {
     const out  = [];
     const root = getCommentRoot();
@@ -940,19 +1012,42 @@ function harvestVisible(seen, postLabel) {
         // Skip the main post article (it contains h1/h2)
         if (block.querySelector('h1,h2,h3')) continue;
 
-        // Commenter name — first profile link with short non-numeric text
         let name = '';
+        // Primary: a[role="link"] pointing to a profile.
+        // GUARD: skip any link that is INSIDE a div[dir="auto"] — those are @mentions embedded
+        // in reply text (e.g. "@Rumman Abid Aorno" in "Rumman Abid Aorno actual reply text").
+        // Without this guard the @mention name can be mistaken for the reply author's name.
+        // SPAN SELECTOR: prefer span[dir="auto"] (= span.xdmh292 name span, 2 levels deep inside
+        // the link) over the first generic span, for a more direct and accurate name read.
         for (const link of block.querySelectorAll('a[role="link"]')) {
-            const sp = link.querySelector('span');
-            if (!sp) continue;
-            const c = (sp.innerText || sp.textContent || '').trim();
+            const href = link.getAttribute('href') || '';
+            if (!href || href === '#' || _SKIP_HREF.test(href)) continue;
+            if (link.closest('div[dir="auto"]')) continue;   // @mention inside comment text — skip
+            // span[dir="auto"] targets the xdmh292 name span directly; any span is the fallback.
+            const sp = link.querySelector('span[dir="auto"]') || link.querySelector('span');
+            const c = (sp ? (sp.innerText || sp.textContent || '') :
+                            (link.innerText || link.textContent || ''))
+                        .replace(/\uFEFF/g, '').trim();
             if (c && c.length > 0 && c.length < 100 &&
                 !/^\d+/.test(c) && !isUIText(c)) { name = c; break; }
         }
+        // Fallback: any a[href] that looks like a profile URL (inline layout).
+        // Some inline layouts use plain <a> without role="link".
+        if (!name) {
+            for (const link of block.querySelectorAll('a[href]')) {
+                const href = link.getAttribute('href') || '';
+                if (!href || href === '#' || _SKIP_HREF.test(href) || _SKIP_PARAM.test(href)) continue;
+                if (link.closest('div[dir="auto"]')) continue;   // @mention — skip
+                const c = (link.innerText || link.textContent || '').replace(/\uFEFF/g, '').trim();
+                if (c && c.length > 1 && c.length < 80 &&
+                    !/^\d/.test(c) && !isUIText(c)) { name = c; break; }
+            }
+        }
         if (!name) continue;
 
-        // Comment text — pick the longest non-UI text div/span with dir="auto"
-        // Skip elements inside <a> tags — those are commenter names or @mentions, not comment body.
+        // Comment text — pick the longest non-UI text div/span with dir="auto".
+        // div[dir="auto"] = comment body (may start with @mention <a> — getText() includes it).
+        // span[dir="auto"] = name span inside <a> → filtered by td.closest('a').
         let comment = '';
         for (const td of block.querySelectorAll('div[dir="auto"], span[dir="auto"]')) {
             if (td.closest('a')) continue;
@@ -969,7 +1064,10 @@ function harvestVisible(seen, postLabel) {
     }
 
     // ── Strategy 2: walk-up fallback (when no articles found) ───────────────
-    // Only activate when there are truly no article containers visible at all
+    // Only activate when there are truly no article containers visible at all.
+    // Same name-extraction rules as Strategy 1:
+    //   • skip links inside div[dir="auto"] (@mentions inside reply text)
+    //   • prefer span[dir="auto"] (= span.xdmh292 name span) over generic span
     if (out.length === 0 && root.querySelectorAll('[role="article"]').length < 2) {
         for (const textDiv of root.querySelectorAll('div[dir="auto"], span[dir="auto"]')) {
             if (textDiv.closest('a')) continue;
@@ -979,9 +1077,11 @@ function harvestVisible(seen, postLabel) {
             for (let i = 0; i < 20 && container && container !== document.body; i++) {
                 let name = null;
                 for (const link of container.querySelectorAll('a[role="link"]')) {
-                    const sp = link.querySelector('span');
-                    if (!sp) continue;
-                    const c = (sp.innerText || sp.textContent || '').trim();
+                    if (link.closest('div[dir="auto"]')) continue;  // @mention — skip
+                    const sp = link.querySelector('span[dir="auto"]') || link.querySelector('span');
+                    const c = (sp ? (sp.innerText || sp.textContent || '') :
+                                   (link.innerText || link.textContent || ''))
+                                .replace(/\uFEFF/g, '').trim();
                     if (c && c.length > 1 && c.length < 80 &&
                         c !== comment && !/^\d/.test(c) && !isUIText(c)) {
                         name = c; break;
@@ -1009,11 +1109,10 @@ function harvestVisible(seen, postLabel) {
 //
 // Root cause of "only 4 comments" bug — fixed in findCommentScrollArea().
 //
-// Additional fixes here:
-//   1. ALWAYS try container scroll + window scroll (not either/or).
-//   2. After clicking "View more", wait 2 s for FB to inject new DOM nodes.
-//   3. MAX_IDLE raised to 20 — handles slow connections / large threads.
-//   4. MAX_ITEMS raised to 10 000.
+// Additional notes:
+//   1. Container scroll + window scroll both attempted each round.
+//   2. After clicking "View more", waits 1.6 s for FB to inject new DOM nodes.
+//   3. MAX_ITEMS 10 000.
 // ═════════════════════════════════════════════════════════════════════════════
 async function scrollAndCollect(seen, postLabel) {
     const SEE_MORE_KW = [
@@ -1067,7 +1166,7 @@ async function scrollAndCollect(seen, postLabel) {
         const batch = harvestVisible(seen, postLabel);
         for (const item of batch) results.push(item);
 
-        // 4. Scroll — container first, then window as supplemental trigger
+        // 4. Scroll
         const container = findCommentScrollArea();
         if (container) {
             const beforeTop = container.scrollTop;
@@ -1077,9 +1176,9 @@ async function scrollAndCollect(seen, postLabel) {
         window.scrollBy(0, SCROLL_PX);
         document.documentElement.scrollTop += SCROLL_PX;
 
-        await sleep(container ? 800 : 1000);   // was 1100 / 1500
+        await sleep(container ? 800 : 1000);
 
-        // 5. Track idle rounds (only increment when truly nothing new)
+        // 5. Track idle rounds
         const currentSize = seen.size;
         showStatus(
             'Step 4/5: Collecting...\n' +
